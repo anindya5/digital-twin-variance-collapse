@@ -89,11 +89,6 @@ class Config:
         return os.environ.get("ANTHROPIC_MODEL", self.raw["simulation"]["model"])
 
     @property
-    def simulation_seed(self) -> int | None:
-        seed = self.raw["simulation"].get("random_seed")
-        return int(seed) if seed is not None else None
-
-    @property
     def temperature(self) -> float:
         return float(self.raw["simulation"]["temperature"])
 

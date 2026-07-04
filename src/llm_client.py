@@ -23,18 +23,9 @@ def _get_client():
     return _client
 
 
-def _cache_key(
-    system: str, user: str, tool: dict, model: str, temperature: float, seed: int | None
-) -> str:
+def _cache_key(system: str, user: str, tool: dict, model: str, temperature: float) -> str:
     payload = json.dumps(
-        {
-            "system": system,
-            "user": user,
-            "tool": tool,
-            "model": model,
-            "temperature": temperature,
-            "seed": seed,
-        },
+        {"system": system, "user": user, "tool": tool, "model": model, "temperature": temperature},
         sort_keys=True,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -55,7 +46,7 @@ def call_tool(
     """
     cache_dir = cfg.cache_dir / cache_subdir
     cache_dir.mkdir(parents=True, exist_ok=True)
-    key = _cache_key(system, user, tool, cfg.model, cfg.temperature, cfg.simulation_seed)
+    key = _cache_key(system, user, tool, cfg.model, cfg.temperature)
     cache_path = cache_dir / f"{key}.json"
 
     if cache_path.exists():
@@ -68,7 +59,7 @@ def call_tool(
     last_err: Exception | None = None
     for attempt in range(cfg.max_retries):
         try:
-            create_kwargs = dict(
+            response = client.messages.create(
                 model=cfg.model,
                 max_tokens=max_tokens or cfg.max_tokens,
                 temperature=cfg.temperature,
@@ -78,9 +69,6 @@ def call_tool(
                 tool_choice={"type": "tool", "name": tool["name"]},
                 timeout=cfg.request_timeout_s,
             )
-            if cfg.simulation_seed is not None:
-                create_kwargs["seed"] = cfg.simulation_seed
-            response = client.messages.create(**create_kwargs)
             tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
             if not tool_use_blocks:
                 raise ValueError(f"Model did not return a tool_use block: {response.content}")

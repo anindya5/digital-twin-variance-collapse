@@ -15,13 +15,11 @@ results/*
 !results/.gitkeep
 
 # Manuscript / paper-writing files -- not part of the replication codebase
-paper/
+papers/*
+!papers/.gitkeep
 src/paper_section.py
-*.tex
-*.pdf
-figures/
 
-# LaTeX build artifacts
+# LaTeX build artifacts (outside papers/; papers/ contents are fully ignored)
 *.aux
 *.log
 *.out

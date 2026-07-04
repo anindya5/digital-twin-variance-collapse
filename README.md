@@ -51,11 +51,10 @@ Each simulated condition is scored against the real human answers with:
   mode match versus the real humans in the same archetype.
 - Paired t-tests and Wilcoxon signed-rank tests between conditions throughout.
 
-All randomness is seeded (`config.yaml: random_seed`), so archetype
-construction and question selection are deterministic. LLM outputs are
-sampled at temperature 1.0 and cached, so a finished run is exactly
-re-analyzable; a fresh run of the simulation steps will produce statistically
-equivalent (not bit-identical) LLM answers.
+All randomness is seeded (`config.yaml`: `archetype.random_seed`,
+`questions.random_seed`, and `simulation.random_seed`), so archetype
+construction, question selection, and LLM sampling are reproducible. LLM
+outputs are also cached to disk, so a finished run is exactly re-analyzable.
 
 ## Requirements
 

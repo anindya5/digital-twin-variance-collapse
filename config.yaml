@@ -37,6 +37,7 @@ questions:
 simulation:
   provider: "anthropic"
   model: "claude-haiku-4-5-20251001"
+  random_seed: 42        # passed to the API for reproducible LLM sampling (when supported)
   temperature: 1.0
   max_tokens: 4096
   request_timeout_s: 60

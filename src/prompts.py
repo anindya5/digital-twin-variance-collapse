@@ -57,6 +57,80 @@ def build_independent_prompt(archetype: Archetype, question: QuestionSpec) -> tu
     return SYSTEM_PROMPT, user, tool
 
 
+def build_persistent_batched_prompt(
+    archetype: Archetype, questions: list[QuestionSpec], n: int
+) -> tuple[str, str, dict]:
+    """Persistent Batched Personas: one call instantiates n distinct
+    individuals sharing the archetype profile and answers the ENTIRE
+    questionnaire for each of them, so every simulated person's answers can
+    cohere across questions (the structural-alignment lever) while the batch
+    preserves between-person diversity (the distributional lever).
+    """
+    profile = archetype.profile_description()
+
+    question_blocks = []
+    answer_properties = {}
+    for i, q in enumerate(questions, start=1):
+        question_blocks.append(
+            f"Question q{i}:\n{q.question_text}\nOptions:\n{q.options_block()}"
+        )
+        answer_properties[f"q{i}"] = {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": q.n_options,
+            "description": f"1-based index into question q{i}'s options.",
+        }
+
+    user = (
+        f"There are {n} different, unrelated real people who all share this exact "
+        f"demographic profile:\n{profile}\n\n"
+        f"First, silently imagine each of the {n} people as a distinct, "
+        "internally consistent individual: their own personality, values, "
+        "personal history, risk tolerance, and current mood. Real people who "
+        "share only these coarse demographic traits still differ from one "
+        "another in all of these ways.\n\n"
+        f"Then have each of the {n} people answer the ENTIRE survey below. "
+        "Each person's answers should be consistent with that same "
+        "individual's character across all questions (a person's answer to "
+        "one question should cohere with their answers to the others), while "
+        "different people should reflect the natural diversity of real "
+        "respondents. Do not make every person answer identically unless you "
+        "genuinely believe that reflects reality.\n\n"
+        "SURVEY\n======\n\n" + "\n\n".join(question_blocks) + "\n\n"
+        f"Record all answers for all {n} people using the record_survey tool, "
+        f"with person_index running from 1 to {n}."
+    )
+
+    tool = {
+        "name": "record_survey",
+        "description": f"Record the full survey answers of all {n} simulated people.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "responses": {
+                    "type": "array",
+                    "minItems": n,
+                    "maxItems": n,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "person_index": {"type": "integer", "minimum": 1, "maximum": n},
+                            "answers": {
+                                "type": "object",
+                                "properties": answer_properties,
+                                "required": list(answer_properties),
+                            },
+                        },
+                        "required": ["person_index", "answers"],
+                    },
+                }
+            },
+            "required": ["responses"],
+        },
+    }
+    return SYSTEM_PROMPT, user, tool
+
+
 def build_multi_respondent_prompt(
     archetype: Archetype, question: QuestionSpec, n: int
 ) -> tuple[str, str, dict]:

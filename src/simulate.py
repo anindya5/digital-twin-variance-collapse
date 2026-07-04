@@ -16,7 +16,11 @@ from tqdm import tqdm
 from .archetypes import Archetype
 from .config import Config
 from .llm_client import call_tool
-from .prompts import build_independent_prompt, build_multi_respondent_prompt
+from .prompts import (
+    build_independent_prompt,
+    build_multi_respondent_prompt,
+    build_persistent_batched_prompt,
+)
 from .question_selection import QuestionSpec
 
 
@@ -72,6 +76,54 @@ def run_multi_respondent(
         ]
 
     return _run_concurrent(pairs, worker, cfg.max_concurrency, "multi_respondent")
+
+
+def run_persistent_batched(
+    cfg: Config, archetypes: list[Archetype], questions: list[QuestionSpec]
+) -> list[SimResponse]:
+    """Persistent Batched Personas: one call per archetype instantiates n
+    personas and answers the whole questionnaire for each, so person_index is
+    genuinely linked across questions within an archetype.
+    """
+    n = cfg.n_simulated_per_group
+
+    def worker(archetype):
+        system, user, tool = build_persistent_batched_prompt(archetype, questions, n)
+        # Output is ~n x len(questions) structured answers; give it headroom
+        # beyond the per-question default.
+        parsed = call_tool(
+            cfg, system, user, tool, cache_subdir="persistent_batched", max_tokens=8192
+        )
+        out = []
+        for r in parsed["responses"]:
+            answers = r.get("answers", {})
+            for i, q in enumerate(questions, start=1):
+                pos = answers.get(f"q{i}")
+                if pos is None:
+                    tqdm.write(
+                        f"  [persistent_batched] {archetype.archetype_id} person "
+                        f"{r.get('person_index')}: missing q{i}, skipped"
+                    )
+                    continue
+                pos = int(pos)
+                if not 1 <= pos <= q.n_options:
+                    tqdm.write(
+                        f"  [persistent_batched] {archetype.archetype_id} person "
+                        f"{r.get('person_index')}: q{i} out of range ({pos}), skipped"
+                    )
+                    continue
+                out.append(
+                    SimResponse(
+                        archetype_id=archetype.archetype_id,
+                        question_id=q.question_id,
+                        condition="persistent_batched",
+                        person_index=int(r["person_index"]),
+                        selected_position=pos,
+                    )
+                )
+        return out
+
+    return _run_concurrent(archetypes, worker, cfg.max_concurrency, "persistent_batched")
 
 
 def run_independent_coarse(

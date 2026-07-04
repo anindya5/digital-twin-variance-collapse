@@ -41,7 +41,12 @@ from src.metrics import build_comparison_table, paired_condition_test
 from src.radius import compute_radius_tables, radius_paired_tests, radius_summary
 from src.self_correlation import compare_structures
 from src.question_selection import questions_from_records, questions_to_records, select_questions
-from src.simulate import responses_to_records, run_independent_coarse, run_multi_respondent
+from src.simulate import (
+    responses_to_records,
+    run_independent_coarse,
+    run_multi_respondent,
+    run_persistent_batched,
+)
 
 PLAN_PATH_NAME = "plan.json"
 
@@ -104,6 +109,14 @@ def cmd_simulate(args):
             return
         responses = run_multi_respondent(cfg, archetypes, questions)
         out_path = cfg.results_dir / "simulated_multi_respondent.csv"
+    elif args.condition == "persistent_batched":
+        print(f"About to make up to {len(archetypes)} API calls (1 per archetype; each "
+              f"instantiates {cfg.n_simulated_per_group} personas answering all "
+              f"{len(questions)} questions).")
+        if not args.yes and not _confirm():
+            return
+        responses = run_persistent_batched(cfg, archetypes, questions)
+        out_path = cfg.results_dir / "simulated_persistent_batched.csv"
     else:
         print(f"About to make up to {n_calls_indep} API calls (1 per archetype x question x "
               f"simulated twin). This is {cfg.n_simulated_per_group}x more expensive than "
@@ -179,6 +192,7 @@ def _person_question_matrices(cfg, archetypes, questions) -> dict[str, pd.DataFr
     for filename, source in [
         ("simulated_independent_coarse.csv", "independent_coarse"),
         ("simulated_multi_respondent.csv", "multi_respondent"),
+        ("simulated_persistent_batched.csv", "persistent_batched"),
     ]:
         path = cfg.results_dir / filename
         if not path.exists():
@@ -246,6 +260,12 @@ def cmd_analyze(args):
         indep_df["source"] = "independent_coarse"
         frames.append(indep_df)
 
+    persistent_path = cfg.results_dir / "simulated_persistent_batched.csv"
+    if persistent_path.exists():
+        pb_df = pd.read_csv(persistent_path)[["archetype_id", "question_id", "selected_position"]]
+        pb_df["source"] = "persistent_batched"
+        frames.append(pb_df)
+
     # Always include the dataset's precomputed GPT-4.1-mini baseline so the
     # RADIUS evaluation covers all three conditions (it's free/local).
     print("Loading precomputed GPT-4.1-mini independent-twin baseline ...")
@@ -308,10 +328,15 @@ def cmd_analyze(args):
                 f"| {row['source']} | {row['TRM']:.3f} | {row['RC']:.3f} | {row['TVD']:.3f} | {row['DH']:.3f} "
                 f"| {row['KL']:.3f} | {row['KL_inf']:.3f} |"
             )
-        if {"multi_respondent", "independent_coarse"} <= set(df_.source.unique()):
-            tests = radius_paired_tests(df_, "multi_respondent", "independent_coarse", keys)
-            report_lines.append("\nPaired tests, multi_respondent vs independent_coarse:")
-            report_lines.append("```\n" + json.dumps(tests, indent=2) + "\n```")
+        for pair in [
+            ("multi_respondent", "independent_coarse"),
+            ("persistent_batched", "multi_respondent"),
+            ("persistent_batched", "independent_coarse"),
+        ]:
+            if set(pair) <= set(df_.source.unique()):
+                tests = radius_paired_tests(df_, pair[0], pair[1], keys)
+                report_lines.append(f"\nPaired tests, {pair[0]} vs {pair[1]}:")
+                report_lines.append("```\n" + json.dumps(tests, indent=2) + "\n```")
 
     # ---- Self-Correlation Distance (inter-question structural alignment) ----
     print("Computing self-correlation distance (inter-question structure) ...")
@@ -407,7 +432,7 @@ def _make_structure_plot(cfg, scd_pairs):
 
     sub = scd_pairs[scd_pairs.granularity == "within_archetype"]
     sources = [
-        s for s in ["independent_coarse", "multi_respondent", "baseline_precomputed"]
+        s for s in ["independent_coarse", "multi_respondent", "persistent_batched", "baseline_precomputed"]
         if s in sub.source.unique()
     ]
     if not sources:
@@ -416,6 +441,7 @@ def _make_structure_plot(cfg, scd_pairs):
     display_names = {
         "independent_coarse": "Independent prompting",
         "multi_respondent": "Multi-respondent prompting",
+        "persistent_batched": "Persistent batched personas",
         "baseline_precomputed": "Rich-persona baseline",
     }
     fig, axes = plt.subplots(1, len(sources), figsize=(4.2 * len(sources), 4.2), sharex=True, sharey=True)
@@ -516,7 +542,11 @@ def main():
     sub.add_parser("build-plan", help="Build archetype groups + select questions").set_defaults(func=cmd_build_plan)
 
     p_sim = sub.add_parser("simulate", help="Run an LLM simulation condition")
-    p_sim.add_argument("--condition", choices=["multi_respondent", "independent_coarse"], required=True)
+    p_sim.add_argument(
+        "--condition",
+        choices=["multi_respondent", "independent_coarse", "persistent_batched"],
+        required=True,
+    )
     p_sim.add_argument("--yes", action="store_true", help="Skip the cost confirmation prompt")
     p_sim.set_defaults(func=cmd_simulate)
 

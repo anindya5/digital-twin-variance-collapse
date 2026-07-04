@@ -37,6 +37,7 @@ def call_tool(
     user: str,
     tool: dict,
     cache_subdir: str = "llm_calls",
+    max_tokens: int | None = None,
 ) -> dict:
     """Call the model, forcing it to respond via `tool`, and return the
     parsed tool input dict. Results are cached to disk keyed by the exact
@@ -60,7 +61,7 @@ def call_tool(
         try:
             response = client.messages.create(
                 model=cfg.model,
-                max_tokens=cfg.max_tokens,
+                max_tokens=max_tokens or cfg.max_tokens,
                 temperature=cfg.temperature,
                 system=system,
                 messages=[{"role": "user", "content": user}],

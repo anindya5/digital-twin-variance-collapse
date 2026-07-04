@@ -16,7 +16,9 @@ automatically.
 > **high precision** (they capture the modal answer) but **low recall** (they
 > collapse the spread of real answers). Prompting the LLM to answer **for
 > multiple people in one call** (multi-respondent prompting), rather than once
-> per twin, is the proposed mitigation.
+> per twin, is the proposed mitigation — and **persisting** those personas
+> across the whole survey (persistent batched personas) additionally restores
+> inter-question consistency.
 
 ## Experimental design
 
@@ -26,6 +28,7 @@ automatically.
 | Ground-truth response variance | Each archetype's members' **actual wave-4 answers** — real, distinct humans, same coarse profile. |
 | Independent prompting (common practice) | One Claude call per simulated twin per question, using only the archetype's shared coarse profile. 10 twins per archetype. |
 | Multi-respondent prompting (the mitigation) | A **single** Claude call per (archetype, question) asking for 10 independent answers "for 10 different people" with that profile. |
+| Persistent batched personas (the hybrid) | A **single** Claude call per archetype instantiating 10 distinct individuals who each answer the **entire 15-question survey**, all personas held in context simultaneously — batching + persistence combined. |
 | Rich-persona external baseline | The dataset's own published GPT-4.1-mini simulation (full wave 1–3 persona per participant) — reused for free, no API calls. |
 | Questions | 15 single-select multiple-choice items from wave-4 behavioral-economics replications (anchoring, framing, Allais paradox, WTA/WTP, ...) — subjective judgments where real people who look alike on paper are known to diverge. |
 
@@ -48,11 +51,11 @@ Each simulated condition is scored against the real human answers with:
   mode match versus the real humans in the same archetype.
 - Paired t-tests and Wilcoxon signed-rank tests between conditions throughout.
 
-All randomness is seeded (`config.yaml: random_seed`), so archetype
-construction and question selection are deterministic. LLM outputs are
-sampled at temperature 1.0 and cached, so a finished run is exactly
-re-analyzable; a fresh run of the simulation steps will produce statistically
-equivalent (not bit-identical) LLM answers.
+All randomness in archetype construction and question selection is seeded
+(`config.yaml`: `archetype.random_seed`, `questions.random_seed`), so those
+steps are deterministic. LLM outputs are sampled at temperature 1.0 and cached
+to disk, so a finished run is exactly re-analyzable; a fresh simulation rerun
+will produce statistically equivalent (not bit-identical) LLM answers.
 
 ## Requirements
 
@@ -116,6 +119,9 @@ python run_experiment.py simulate --condition multi_respondent
 
 # Independent condition: 1 call per twin x question = 7,500 calls
 python run_experiment.py simulate --condition independent_coarse
+
+# Persistent batched personas: 1 call per archetype = 50 calls
+python run_experiment.py simulate --condition persistent_batched
 ```
 
 With the default Haiku-class model this is inexpensive (on the order of a few
@@ -130,9 +136,10 @@ runs resume for free, and re-running a finished step costs nothing.
 python run_experiment.py analyze
 ```
 
-No API calls. Scores all three conditions (your two Claude conditions plus
-the dataset's free precomputed GPT-4.1-mini baseline) against the real human
-answers and writes everything to `results/`.
+No API calls. Scores every condition you have simulated (plus the dataset's
+free precomputed GPT-4.1-mini baseline, always included) against the real
+human answers and writes everything to `results/`. Conditions you skipped are
+simply omitted.
 
 ## What to expect in `results/`
 
@@ -147,24 +154,27 @@ answers and writes everything to `results/`.
 | `variance_comparison.png`, `self_correlation_scatter.png` | Diagnostic plots. |
 
 Headline results this pipeline should approximately reproduce (per
-archetype–question granularity, multi-respondent vs. independent):
+archetype–question granularity):
 
-| Metric | Independent | Multi-respondent |
-|---|---|---|
-| Distribution Homogeneity (share indistinguishable from humans) ↑ | ≈ 0.39 | ≈ 0.94 |
-| Total Variation Distance ↓ | ≈ 0.53 | ≈ 0.33 |
-| Smoothed forward KL (nats) ↓ | ≈ 0.91 | ≈ 0.41 |
-| Share of pairs with unsmoothed KL = ∞ ↓ | ≈ 0.84 | ≈ 0.25 |
-| Top Rank Match ↑ | ≈ 0.86 | ≈ 0.80 |
-| Median variance ratio vs. humans (1.0 = perfect) | ≈ 0.00 | ≈ 1.07 |
+| Metric | Independent | Multi-respondent | Persistent batched |
+|---|---|---|---|
+| Distribution Homogeneity (share indistinguishable from humans) ↑ | ≈ 0.39 | ≈ 0.94 | ≈ 0.86 |
+| Total Variation Distance ↓ | ≈ 0.53 | ≈ 0.33 | ≈ 0.36 |
+| Smoothed forward KL (nats) ↓ | ≈ 0.91 | ≈ 0.41 | ≈ 0.51 |
+| Share of pairs with unsmoothed KL = ∞ ↓ | ≈ 0.84 | ≈ 0.25 | ≈ 0.29 |
+| Top Rank Match ↑ | ≈ 0.86 | ≈ 0.80 | ≈ 0.77 |
+| Median variance ratio vs. humans (1.0 = perfect) | ≈ 0.00 | ≈ 1.07 | ≈ 0.99 |
+| Self-correlation structure recovery r ↑ | ≈ 0 or negative | ≈ 0.2 | ≈ 0.46 |
 
 Exact values will differ slightly because LLM sampling is stochastic, but all
-cross-condition orderings and significance results should hold. Note the
-self-correlation analysis should show that *neither* Claude condition
-reproduces human inter-question correlation structure (structure-recovery
-r ≈ 0 or negative), while the persistent rich-persona baseline recovers it
-substantially (r ≈ 0.7) — marginal and structural alignment are separate
-failure modes.
+cross-condition orderings and significance results should hold. The
+self-correlation analysis should show that neither single-question Claude
+condition reproduces human inter-question correlation structure, while the
+persistent conditions do — persistent batched personas substantially
+(r ≈ 0.46, though with correlations *stronger* than the human ones) and the
+rich-persona baseline most closely (r ≈ 0.7). Marginal and structural
+alignment are separate failure modes; persistent batched personas is the only
+coarse-profile condition that addresses both at once.
 
 ## Configuration
 
@@ -176,11 +186,13 @@ pipeline recomputes everything downstream automatically.
 
 ## Notes and caveats
 
-- The precomputed GPT-4.1-mini baseline differs from the two Claude conditions
+- The precomputed GPT-4.1-mini baseline differs from the Claude conditions
   in **both** model and persona richness, so treat its comparison as
-  indicative, not controlled. The controlled comparison in this design is
-  `independent_coarse` vs. `multi_respondent`: same model, same profile, only
-  the batching manipulation differs.
+  indicative, not controlled. The controlled comparisons in this design are
+  among the three Claude conditions (same model, same coarse profile):
+  `independent_coarse` vs. `multi_respondent` isolates batching, and
+  `multi_respondent` vs. `persistent_batched` isolates persona persistence
+  across the questionnaire.
 - Twin-2K-500 wave 4 repeats measures from waves 1–3 (test–retest design).
   Twin prompts are built only from demographic profile data and scoring is
   only against wave-4 ground truth, so the predicted answers never leak into

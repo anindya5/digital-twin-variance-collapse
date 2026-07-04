@@ -57,6 +57,40 @@ steps are deterministic. LLM outputs are sampled at temperature 1.0 and cached
 to disk, so a finished run is exactly re-analyzable; a fresh simulation rerun
 will produce statistically equivalent (not bit-identical) LLM answers.
 
+## Repository layout
+
+```
+run_experiment.py          # CLI entry point
+src/
+  cli.py                   # argument parsing
+  pipeline/
+    orchestrator.py        # ExperimentOrchestrator — coordinates all steps
+    fetch.py               # download Twin-2K-500 subset
+    plan.py                # build / load plan.json
+    simulation_run.py      # run one LLM condition
+    dataframes.py          # long-format tables for analysis
+    analysis.py            # metrics, RADIUS, SCD, summary.md, plots
+    plots.py               # diagnostic figures
+    self_test.py           # synthetic end-to-end smoke test
+  metrics.py               # variance / entropy / mode-match diagnostics
+  radius.py                # RADIUS + KL divergence
+  self_correlation.py      # Self-Correlation Distance
+  simulate.py              # concurrent LLM API calls
+tests/                     # unit tests for all evaluation modules
+```
+
+You can also drive the pipeline from Python:
+
+```python
+from src.pipeline import ExperimentOrchestrator
+
+orch = ExperimentOrchestrator()
+orch.fetch_data()
+orch.build_plan()
+orch.simulate("multi_respondent", skip_confirm=True)
+orch.analyze()
+```
+
 ## Requirements
 
 - Python 3.10+
@@ -87,11 +121,14 @@ environment variable without editing the file.
 ### 3. Sanity-check the pipeline (free, no API key needed)
 
 ```bash
-python run_experiment.py self-test
+python run_experiment.py self-test   # end-to-end smoke test on synthetic data
+pytest                               # unit tests for all evaluation metrics
 ```
 
-This exercises data loading, archetype construction, metrics, and statistics
-end-to-end on synthetic data.
+`self-test` exercises the orchestrator wiring. `pytest` runs focused unit tests
+on every evaluation module — variance diagnostics, RADIUS (TRM / RC / TVD / DH /
+KL), Self-Correlation Distance, and the pipeline itself. All tests use small
+synthetic fixtures; no dataset download or API key required.
 
 ### 4. Download the dataset subset
 
@@ -201,3 +238,23 @@ pipeline recomputes everything downstream automatically.
   humans answering a given question within an archetype can be smaller than
   the archetype size; the per-archetype statistics use permutation/bootstrap
   methods where small samples make asymptotic tests unreliable.
+
+## Tests
+
+| File | What it covers |
+|---|---|
+| `tests/test_metrics.py` | Distribution stats, variance/entropy ratios, paired Wilcoxon tests |
+| `tests/test_radius.py` | TVD, KL divergence, TRM, RC, DH, `compute_radius_tables`, paired RADIUS tests |
+| `tests/test_self_correlation.py` | Correlation matrices, SCD, structure recovery, undefined-pair detection |
+| `tests/test_pipeline.py` | Orchestrator, CLI commands, `self-test` smoke path |
+
+Run the full suite:
+
+```bash
+pytest -v
+```
+
+These tests verify that each metric behaves correctly on controlled synthetic
+inputs (e.g. collapsed vs. spread distributions, matching vs. destroyed
+inter-question structure). They do **not** re-run LLM simulations — use
+`simulate` + `analyze` for that.

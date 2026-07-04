@@ -1,0 +1,55 @@
+# Configuration for the Twin-2K-500 precision/recall (variance-collapse) experiment.
+# See README.md for the mapping between these settings and the paper's methodology.
+
+dataset:
+  hf_repo: "LLM-Digital-Twin/Twin-2K-500"
+  cache_dir: "data/raw"
+  # Precomputed independent-twin baseline shipped with the dataset (GPT-4.1-mini,
+  # built from each person's *full* wave1-3 persona). Reused as the "independent
+  # prompting" condition by default so we don't have to pay to rebuild it.
+  baseline_dir: "LLM_simulation_results/GPT4.1-mini-simulation-llm-vs-human"
+  baseline_human_file: "responses_wave4_formatted.csv"
+  baseline_llm_file: "responses_llm_imputed_formatted.csv"
+  mapping_file: "LLM_simulation_results/wave4_formatted_to_catalog_mapping.json"
+
+# "Identical profile" archetype = participants who match exactly on all of these
+# demographic QuestionIDs (all four are coarse/bucketed categorical questions from
+# the Demographics block, see question_catalog.json).
+#   QID13 = Age bucket (18-29 / 30-49 / 50-64 / 65+)
+#   QID12 = Sex assigned at birth (Male / Female)
+#   QID11 = US region (Northeast / Midwest / South / West / Pacific)
+#   QID14 = Highest education completed (6 levels)
+archetype:
+  attributes: ["QID13", "QID12", "QID11", "QID14"]
+  min_group_size: 15      # need enough real humans per group to estimate variance
+  n_groups: 50             # "medium" scope
+  n_simulated_per_group: 10  # how many synthetic twins to simulate per archetype
+  random_seed: 42
+
+questions:
+  n_questions: 15          # "medium" scope
+  allowed_types: ["MC"]    # keep to single-select multiple-choice for clean, boundable answer sets
+  min_options: 2
+  max_options: 10
+  max_per_block: 2         # cap questions taken from the same survey block, for topical diversity
+  random_seed: 42
+
+simulation:
+  provider: "anthropic"
+  model: "claude-haiku-4-5-20251001"
+  temperature: 1.0
+  max_tokens: 4096
+  request_timeout_s: 60
+  max_retries: 5
+  max_concurrency: 8  # concurrent in-flight API calls
+  # "precomputed"   -> reuse the dataset's shipped GPT-4.1-mini independent-twin results (free, default)
+  # "claude_coarse" -> re-run the independent condition ourselves with Claude, one call per
+  #                    simulated twin, using ONLY the shared archetype profile (no individuating
+  #                    detail) so it is a true apples-to-apples match against the multi-respondent
+  #                    condition below. This multiplies API calls by n_simulated_per_group, so it
+  #                    is opt-in.
+  independent_source: "claude_coarse"
+
+paths:
+  cache_dir: "cache"
+  results_dir: "results"

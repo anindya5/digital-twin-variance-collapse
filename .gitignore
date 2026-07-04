@@ -1,0 +1,31 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+antrhopic.key
+*.key
+.DS_Store
+
+# Downloaded dataset files and API response caches (large / regenerable)
+data/raw/
+cache/
+
+# Generated outputs (regenerable via run_experiment.py analyze)
+results/*
+!results/.gitkeep
+
+# Manuscript / paper-writing files -- not part of the replication codebase
+paper/
+src/paper_section.py
+*.tex
+*.pdf
+figures/
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.synctex.gz

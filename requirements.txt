@@ -1,0 +1,9 @@
+huggingface_hub>=0.24
+pandas>=2.0
+numpy>=1.26,<2.0
+scipy>=1.11
+anthropic>=0.34
+python-dotenv>=1.0
+tqdm>=4.66
+matplotlib>=3.8
+PyYAML>=6.0
